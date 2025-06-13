@@ -1,0 +1,148 @@
+---
+title: "Percepciones sobre inmigración según edad, sexo y región en Chile (2020)"
+author: "Fernanda Duarte, Maite Rojas y Antonia Ríos"
+format: html
+editor: visual
+---
+
+## Introducción
+
+La percepción sobre la inmigración es un tema de alta relevancia en las sociedades contemporáneas, especialmente en países como Chile donde los flujos migratorios han crecido considerablemente en la última década. En este trabajo se analiza cómo varían las percepciones sobre inmigración según tres variables clave: edad, sexo y región de residencia. La fuente de datos utilizada es la Encuesta Latinobarómetro 2020, específicamente la sección correspondiente a Chile. Este estudio se basa en la variable P38, que pregunta si la inmigración beneficia o perjudica al país, y se busca identificar patrones de asociación entre esta percepción y las características sociodemográficas mencionadas.
+
+## Análisis descriptivo
+
+```{r}
+library(dplyr)
+library(ggplot2)
+
+# Cargar base procesada
+datos <- readRDS("procesamiento/chile_procesado.rds")
+
+# Frecuencia percepción inmigración
+table(datos$percepcion_inmigracion)
+
+# Gráfico percepción
+ggplot(datos, aes(x = percepcion_inmigracion)) +
+  geom_bar(fill = "#5B9BD5") +
+  theme_minimal() +
+  labs(title = "Percepción sobre inmigración", x = "Percepción", y = "Frecuencia")
+
+# Tabla sexo
+table(datos$sexo)
+
+# Histograma edad
+hist(datos$edad, main = "Distribución de la edad", xlab = "Edad", col = "#F4A261")
+```
+
+## Asociación entre variables
+
+```{r}
+# Percepción vs Sexo
+table(datos$percepcion_inmigracion, datos$sexo)
+
+# Promedio de edad por percepción
+datos %>%
+  group_by(percepcion_inmigracion) %>%
+  summarise(promedio_edad = mean(edad, na.rm = TRUE))
+
+# Correlación percepción ~ edad
+library(Hmisc)
+
+# Crear versión numérica de la percepción (beneficia = 1, perjudica = 0)
+datos$percepcion_num <- ifelse(datos$percepcion_inmigracion == "Lo beneficia", 1,
+                         ifelse(datos$percepcion_inmigracion == "Lo perjudica", 0, NA))
+
+# Correlación con edad
+rcorr(as.numeric(datos$edad), datos$percepcion_num, type = "pearson")
+```
+
+## Construcción de índice de apertura hacia la inmigración
+
+```{r}
+library(psych)
+
+# Seleccionar preguntas P37N A–D y renombrar para claridad
+indice_items <- datos %>% 
+  select(P37NA, P37NB, P37NC, P37ND) %>%
+  rename(
+    inmigrantes_extraregion = P37NA,
+    inmigrantes_latinoamerica = P37NB,
+    inmigrantes_haiti = P37NC,
+    inmigrantes_venezuela = P37ND
+  )
+
+# Convertir a numérico e invertir escala
+indice_items <- mutate_all(indice_items, as.numeric)
+indice_items_invertido <- 5 - indice_items
+
+# Alfa de Cronbach
+alpha(indice_items_invertido)
+
+# Crear índice promedio
+datos$indice_apertura <- rowMeans(indice_items_invertido, na.rm = TRUE)
+
+# Histograma del índice
+hist(datos$indice_apertura,
+     main = "Índice de apertura hacia la inmigración",
+     xlab = "1 = cerrado, 4 = abierto",
+     col = "#5B9BD5")
+```
+
+## Asociación del índice con otras variables
+
+```{r}
+# Índice según sexo
+datos %>%
+  group_by(sexo) %>%
+  summarise(promedio_indice = mean(indice_apertura, na.rm = TRUE))
+
+# Índice según percepción
+datos %>%
+  group_by(percepcion_inmigracion) %>%
+  summarise(promedio_indice = mean(indice_apertura, na.rm = TRUE))
+
+# Correlación índice ~ edad
+rcorr(as.numeric(datos$edad), datos$indice_apertura, type = "pearson")
+```
+
+## Modelos de regresión lineal
+
+```{r}
+library(broom)
+library(modelsummary)
+
+# Modelo 1: percepción ~ edad
+modelo1 <- lm(percepcion_num ~ edad, data = datos)
+
+# Modelo 2: percepción ~ edad + sexo
+modelo2 <- lm(percepcion_num ~ edad + sexo, data = datos)
+
+# Modelo 3: percepción ~ edad + sexo + region
+modelo3 <- lm(percepcion_num ~ edad + sexo + region, data = datos)
+
+# Tabla comparativa
+modelsummary(list("Modelo 1" = modelo1, "Modelo 2" = modelo2, "Modelo 3" = modelo3), 
+             stars = TRUE, statistic = "std.error")
+```
+
+## Gráfico de valores predichos
+
+```{r}
+library(ggeffects)
+
+# Predicción percepción ~ edad + sexo
+gg <- ggpredict(modelo2, terms = c("edad", "sexo"))
+
+# Gráfico
+plot(gg) + 
+  labs(title = "Percepción inmigración predicha según edad y sexo",
+       x = "Edad", y = "Probabilidad de pensar que la inmigración beneficia")
+```
+
+## Conclusiones
+
+Los resultados muestran que existen diferencias relevantes en la percepción de la inmigración según sexo y edad. Las personas mayores tienden a tener una percepción más negativa, mientras que las más jóvenes presentan mayor apertura. También se observan diferencias por sexo, donde las mujeres tienden a tener posturas ligeramente más críticas hacia la inmigración.
+
+La estimación de modelos de regresión lineal permite observar que la edad tiene un efecto negativo sobre la probabilidad de percibir la inmigración como positiva. Este efecto se mantiene incluso al controlar por sexo y región. Además, se visualiza cómo varía esa percepción predicha según sexo, a través de un gráfico de efectos marginales.
+
+El índice de apertura también muestra relaciones similares, aunque no fue usado como variable dependiente en esta etapa. El análisis confirma las hipótesis planteadas en la investigación y cumple con los objetivos metodológicos del trabajo.
